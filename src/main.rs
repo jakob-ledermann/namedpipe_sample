@@ -155,12 +155,17 @@ fn main() -> anyhow::Result<()> {
     )
     .expect("Failed to launch Receiver on client side");
 
+    // Make sure the client_receiver is reading on the handle
+    thread::sleep(Duration::from_secs(1));
+
     let mut sender = File::from(client);
     let message = b"Hello";
     sender
         .write_all(message)
         .context("Failed to write to pipe")?;
     sender.flush()?;
+
+    println!("client sent message");
 
     thread::sleep(Duration::from_secs(10));
 
@@ -188,14 +193,15 @@ fn spawn_receiver(
                             let writer_handle =
                                 receiver_handle.try_clone().expect("Failed to clone handle");
                             thread::spawn(move || {
-                                thread::sleep(Duration::from_secs_f32(0.1));
+                                //thread::sleep(Duration::from_secs_f32(0.1));
                                 let mut writer = File::from(writer_handle);
                                 println!("{} answering {} bytes", thread_name, answer.len());
                                 writer
                                     .write_all(answer.as_slice())
                                     .expect("Failed to reply");
                                 println!("{} answered {} bytes", thread_name, answer.len())
-                            });
+                            })
+                            .join();
                         }
                     }
                     Err(err) => {
