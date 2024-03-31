@@ -157,6 +157,8 @@ fn main() -> anyhow::Result<()> {
     // Make sure the client_receiver is reading on the handle
     thread::sleep(Duration::from_secs(1));
 
+    println!("Client sending message");
+
     let mut sender = client;
     let message = b"Hello";
     sender
@@ -197,8 +199,7 @@ fn spawn_receiver(
                                     .write_all(answer.as_slice())
                                     .expect("Failed to reply");
                                 println!("{} answered {} bytes", thread_name, answer.len())
-                            })
-                            .join();
+                            });
                         }
                     }
                     Err(err) => {
