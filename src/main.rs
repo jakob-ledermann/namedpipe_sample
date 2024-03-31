@@ -5,7 +5,6 @@
 use anyhow::Context;
 use std::{
     ffi::OsString,
-    fs::File,
     io::{self, Read, Write},
     os::windows::{
         ffi::OsStrExt,
@@ -23,7 +22,7 @@ use winapi::{
     },
     um::{
         errhandlingapi::GetLastError,
-        fileapi::{CreateFileW, OPEN_EXISTING},
+        fileapi::{CreateFileW, FlushFileBuffers, ReadFile, WriteFile, OPEN_EXISTING},
         handleapi::{CloseHandle, DuplicateHandle, INVALID_HANDLE_VALUE},
         namedpipeapi::{ConnectNamedPipe, CreateNamedPipeW},
         processthreadsapi::GetCurrentProcess,
@@ -158,7 +157,7 @@ fn main() -> anyhow::Result<()> {
     // Make sure the client_receiver is reading on the handle
     thread::sleep(Duration::from_secs(1));
 
-    let mut sender = File::from(client);
+    let mut sender = client;
     let message = b"Hello";
     sender
         .write_all(message)
@@ -180,8 +179,7 @@ fn spawn_receiver(
     thread::Builder::new()
         .name(thread_name.into())
         .spawn(move || {
-            let mut reader =
-                std::fs::File::from(receiver_handle.try_clone().expect("Failed to clone handle"));
+            let mut reader = receiver_handle.try_clone().expect("Failed to clone handle");
             let mut buf = [0u8; BUFSIZE as usize];
             loop {
                 match reader.read(&mut buf[..]) {
@@ -190,13 +188,12 @@ fn spawn_receiver(
                         if should_echo {
                             let mut answer: Vec<u8> = Vec::new();
                             answer.extend_from_slice(&buf[..consumed]);
-                            let writer_handle =
+                            let mut writer_handle =
                                 receiver_handle.try_clone().expect("Failed to clone handle");
                             thread::spawn(move || {
                                 //thread::sleep(Duration::from_secs_f32(0.1));
-                                let mut writer = File::from(writer_handle);
                                 println!("{} answering {} bytes", thread_name, answer.len());
-                                writer
+                                writer_handle
                                     .write_all(answer.as_slice())
                                     .expect("Failed to reply");
                                 println!("{} answered {} bytes", thread_name, answer.len())
@@ -249,6 +246,46 @@ impl From<HANDLE> for PipeHandle {
 impl From<PipeHandle> for std::fs::File {
     fn from(value: PipeHandle) -> Self {
         value.0.into()
+    }
+}
+
+impl std::io::Read for PipeHandle {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let mut consumed = 0;
+        call_BOOL_with_last_error!(unsafe {
+            ReadFile(
+                self.0.as_raw_handle() as _,
+                buf.as_mut_ptr() as _,
+                buf.len()
+                    .clamp(u32::MIN as usize, usize::max(usize::MAX, u32::MAX as usize))
+                    as u32,
+                &mut consumed,
+                ptr::null_mut(),
+            )
+        })
+        .map(|_| consumed as usize)
+    }
+}
+
+impl std::io::Write for PipeHandle {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let mut consumed = 0;
+        call_BOOL_with_last_error!(unsafe {
+            WriteFile(
+                self.0.as_raw_handle() as _,
+                buf.as_ptr() as _,
+                buf.len()
+                    .clamp(u32::MIN as usize, usize::max(usize::MAX, u32::MAX as usize))
+                    as u32,
+                &mut consumed,
+                ptr::null_mut(),
+            )
+        })
+        .map(|_| consumed as usize)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        call_BOOL_with_last_error!(unsafe { FlushFileBuffers(self.0.as_raw_handle() as _) })
     }
 }
 
