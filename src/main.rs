@@ -29,6 +29,7 @@ use winapi::{
         minwinbase::OVERLAPPED,
         namedpipeapi::{ConnectNamedPipe, CreateNamedPipeW},
         processthreadsapi::GetCurrentProcess,
+        synchapi::CreateEventW,
         winbase::{
             FILE_FLAG_OVERLAPPED, PIPE_ACCESS_DUPLEX, PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES,
             PIPE_WAIT,
@@ -255,7 +256,7 @@ impl From<PipeHandle> for std::fs::File {
 
 impl std::io::Read for PipeHandle {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let mut overlapped = create_zeroed_overlapped();
+        let mut overlapped = create_overlapped_with_new_event()?;
         let mut consumed = 0;
         let result = call_BOOL_with_last_error!(unsafe {
             ReadFile(
@@ -288,7 +289,7 @@ impl std::io::Read for PipeHandle {
 
 impl std::io::Write for PipeHandle {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let mut overlapped = create_zeroed_overlapped();
+        let mut overlapped = create_overlapped_with_new_event()?;
         let mut consumed = 0;
         let result = call_BOOL_with_last_error!(unsafe {
             WriteFile(
@@ -328,4 +329,19 @@ unsafe impl Send for PipeHandle {}
 fn create_zeroed_overlapped() -> OVERLAPPED {
     // SAFETY: Docs state to use an OVERLAPPED-Struct with all Members zeroed
     unsafe { MaybeUninit::zeroed().assume_init() }
+}
+
+fn create_overlapped_with_new_event() -> io::Result<OVERLAPPED> {
+    let mut overlapped = create_zeroed_overlapped();
+    overlapped.hEvent = {
+        let value =
+            unsafe { CreateEventW(ptr::null_mut(), TRUE.into(), TRUE.into(), ptr::null_mut()) };
+        if !value.is_null() {
+            Ok(value)
+        } else {
+            Err(std::io::Error::last_os_error())
+        }
+    }?;
+
+    Ok(overlapped)
 }
