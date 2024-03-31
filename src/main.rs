@@ -5,51 +5,10 @@
 use anyhow::Context;
 use namedpipe::{PipeStream, BUFSIZE};
 use std::{
-    ffi::OsString,
     io::{self, Read, Write},
-    os::windows::ffi::OsStrExt,
-    ptr,
     thread::{self, JoinHandle},
     time::Duration,
 };
-use winapi::{
-    shared::{
-        minwindef::DWORD,
-        ntdef::HANDLE,
-        winerror::{ERROR_PIPE_BUSY, ERROR_PIPE_CONNECTED},
-    },
-    um::{
-        errhandlingapi::GetLastError,
-        fileapi::{CreateFileW, OPEN_EXISTING},
-        handleapi::{CloseHandle, INVALID_HANDLE_VALUE},
-        namedpipeapi::{ConnectNamedPipe, CreateNamedPipeW},
-        winbase::{
-            FILE_FLAG_OVERLAPPED, PIPE_ACCESS_DUPLEX, PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES,
-            PIPE_WAIT,
-        },
-        winnt::{FILE_SHARE_READ, FILE_SHARE_WRITE, GENERIC_READ, GENERIC_WRITE},
-    },
-};
-
-macro_rules! call_BOOL_with_last_error {
-    ($call: expr) => {
-        if ($call) != 0 {
-            Ok(())
-        } else {
-            Err(std::io::Error::last_os_error())
-        }
-    };
-}
-macro_rules! call_with_last_error {
-    ($call: expr) => {{
-        let value = $call;
-        if value != INVALID_HANDLE_VALUE {
-            Ok(value)
-        } else {
-            Err(std::io::Error::last_os_error())
-        }
-    }};
-}
 
 fn main() -> anyhow::Result<()> {
     let pipe = namedpipe::Pipe::new("test_pipe");
@@ -170,6 +129,26 @@ mod namedpipe {
             winnt::{FILE_SHARE_READ, FILE_SHARE_WRITE, GENERIC_READ, GENERIC_WRITE, HANDLE},
         },
     };
+
+    macro_rules! call_BOOL_with_last_error {
+        ($call: expr) => {
+            if ($call) != 0 {
+                Ok(())
+            } else {
+                Err(std::io::Error::last_os_error())
+            }
+        };
+    }
+    macro_rules! call_with_last_error {
+        ($call: expr) => {{
+            let value = $call;
+            if value != INVALID_HANDLE_VALUE {
+                Ok(value)
+            } else {
+                Err(std::io::Error::last_os_error())
+            }
+        }};
+    }
 
     /// Helper function to create an instance of [OVERLAPPED] with a new unique event
     fn create_overlapped_with_new_event() -> io::Result<OVERLAPPED> {
